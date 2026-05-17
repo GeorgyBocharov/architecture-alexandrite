@@ -1,0 +1,90 @@
+@startuml Customer order processing ASIS
+title "Customer order processing"
+
+actor user as "Customer"
+participant shop as "Shop"
+participant shop_db as "Shop DB"
+
+
+actor seller as "Seller"
+participant crm as "CRM"
+participant 3dDB as "3d files"
+
+actor operator as "Operator"
+participant mes as "MES"
+participant mes_db as "MES DB"
+
+
+group "Создание заказа"
+user->shop: Создание заказа
+shop->shop_db: Сохранение заказа в статусе INITIATED 
+user<--shop: Подтверждение создания заказа
+user->shop: загрузка 3d модели изделия
+shop -> 3dDB: сохранение 3d модели
+shop -> shop_db: Сохранение заказа в статусе FILE_UPLOADED
+user<--shop: Подтверждение загрузки 3d модели
+user->shop: подвтерждение заказа
+shop-> shop_db: Сохранение заказа в статусе SUBMITTED
+end group
+
+group "Отправка заказа на расчет"
+seller -> crm: запрос заказов в статусе SUBMITTED
+crm -> shop_db: поиск заказов
+shop_db --> crm: заказы
+crm --> seller: заказы
+seller -> crm: запускает заказы в работу
+crm -> mes: отправка заказов в работу [MQ]
+mes -> mes_db: сохранение заказа в статусе SUBMITTED
+mes -> 3dDB: получение модели для расчета
+mes -> mes: расчет цены изделия  
+mes -> mes_db: сохранение заказа в статусе PRICE_CALCULATED
+mes -> crm: отправка данных по цене заказа [MQ]
+crm -> shop_db: сохранение цены изделия в заказ и перевод в статус  PRICE_CALCULATED
+end group
+
+group "Подвтерждение заказа с учетом цены"
+seller -> crm: получение заказов с расчитанными ценами
+seller -> user: подвтерждение заказа с учетом стоимости
+user --> seller: стоимость согласована
+seller -> crm: отправка заказа на производство
+crm -> shop_db: сохранение заказа в статусе MANUFACTURING_APPROVED
+crm -> mes: отправка заказа в производство [MQ]
+mes -> mes_db: сохранение заказа в статусе MANUFACTURING_APPROVED
+end group
+
+group "Изготовление изделия"
+operator -> mes: получение заказов в статусе MANUFACTURING_APPROVED
+operator -> mes: старт работы над заказом
+mes -> mes_db: сохранение заказа в статусе MANUFACTURING_STARTED
+mes -> crm: отправка информации о статусе заказа
+crm -> shop_db: сохранение заказа в статусе MANUFACTURING_STARTED
+operator -> operator: изготовление изделия
+operator -> mes: изделие готово
+mes -> mes_db: сохранение заказа в статусе MANUFACTURING_COMPLETED
+mes -> crm: отправка информации о статусе заказа
+crm -> shop_db: сохранение заказа в статусе MANUFACTURING_COMPLETED
+end group
+
+group "Сборка заказа"
+operator -> mes: получение заказов в статусе MANUFACTURING_COMPLETED
+operator -> mes: старт упаковки заказа
+mes -> mes_db: сохранение заказа в статусе PACKAGING
+mes -> crm: отправка информации о статусе заказа
+crm -> shop_db: сохранение заказа в статусе PACKAGING
+operator -> operator: упаковка и отправка заказа
+operator -> mes: заказ отправлен
+mes -> mes_db: сохранение заказа в статусе SHIPPED
+mes -> crm: отправка информации о статусе заказа
+crm -> shop_db: сохранение заказа в статусе SHIPPED
+end group
+
+group "Завершение заказа"
+seller -> seller: получает уведомление о доставке заказа
+seller -> crm: завершение заказа
+crm -> shop_db: сохранение заказа в статусе CLOSED
+crm -> mes: оправка команды о завершении заказа [MQ]
+mes -> mes_db: сохранение заказа в статусе CLOSED
+end group
+
+
+@enduml
