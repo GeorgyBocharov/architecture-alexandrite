@@ -1,0 +1,75 @@
+@startuml MES Operator Order Management
+title "MES Operator Order Management"
+
+actor operator as "Operator"
+
+participant mes as "MES"
+participant mes_cache as "CACHE"
+participant mes_db as "MES DB"
+participant mq as "MQ"
+
+group "получение заказов"
+operator -> mes: получить новые заказы на исполнение
+mes -> mes_cache: получение заказов в статусе MANUFACTURING_APPROVED
+alt кеш в порядке
+    mes <-- mes_cache: новые заказы с сокращенной метой
+    alt в кеше пусто и GET no_orders == nil
+        mes -> mes_db: поиск заказов из бд
+        mes <-- mes_db: новые заказы с сокращенной метой
+        alt в бд есть заказы
+            mes -> mes: обогащение кеша
+        else в бд нет заказов
+            mes -> mes_cache: SET no_orders: true TTL 30s
+        end
+    end
+else кеш упал
+    mes -> mes_db: поиск заказов из бд (если бд лежит, вернем ошибку)
+    mes <-- mes_db: новые заказы с сокращенной метой
+end
+
+operator <-- mes: новые заказы
+
+
+operator -> mes: взятие заказа в работу
+mes -> mes_db: перевод заказа в статус MANUFACTURING_IN_PROGRESS
+mes <-- mes_db: полная мета заказа
+operator <--  mes: полная мета заказа
+mes -> mq: нотификация об изменении статуса
+mes -> mes_cache: удаление заказа из кеша
+end group
+
+group "наполнение кеша"
+mq -> mes: новый заказ
+mes -> mes_cache: GET no_orders
+mes <-- mes_cache: результат проверки
+alt no_orders == true
+mes -> mes_cache: DEL no_orders
+end
+mes -> mes_cache: GET order_queue_full
+mes <-- mes_cache: результат проверки
+alt очередь полная
+mes -> mes_db: сохранение
+else в очереди есть место
+mes -> mes_cache: сохранение сокращенной меты
+mes -> mes_db: сохранение
+end
+end group
+
+group "проверка наполненности очереди - раз в 10 мин"
+mes -> mes: раз в 10 минут: запуск cron процесса проверки размера очереди
+mes -> mes_cache: получить размер очереди 
+mes <-- mes_cache: размер очереди
+alt size > 1000
+mes -> mes_cache: SET order_queue_full
+else size > 500
+mes -> mes_cache: DEL order_queue_full
+else size < 500
+mes -> mes_cache: DEL order_queue_full
+mes -> mes_db: получить 500 самых ранних заказов в ожидании
+mes <-- mes_db: заказы
+mes -> mes_cache: обогащение кеша
+end
+end group
+
+
+@enduml

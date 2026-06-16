@@ -1,0 +1,35 @@
+@startuml API User order processing ASIS
+title "API User order processing"
+
+actor user as "API User"
+participant shop_db as "Shop DB"
+
+
+actor seller as "Seller"
+participant crm as "CRM"
+participant 3dDB as "3d files"
+
+actor operator as "Operator"
+participant mes as "MES"
+participant mes_db as "MES DB"
+
+
+group "Создание заказа"
+user->mes: Создание заказа с 3d моделью
+mes->3dDB: Сохранение 3d модели
+mes->crm: отправка заказа в CRM [MQ]
+crm->shop_db: сохранение заказа в статусе SUBMITTED
+end group
+
+note over seller, mes_db: Отправка заказа на расчет
+
+note over user, mes_db: Подвтерждение заказа с учетом цены
+
+note over shop_db, mes_db: Выполнение заказа
+
+note over shop_db, mes_db: Сборка заказа
+
+note over shop_db, mes_db: Завершение заказа
+
+
+@enduml
